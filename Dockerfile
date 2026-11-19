@@ -21,7 +21,7 @@ RUN bundle config --local deployment 'true' \
 
 FROM base AS build
 
-ARG PACKAGES='alpine-sdk libpq-dev'
+ARG PACKAGES='alpine-sdk libpq-dev yaml-dev libffi-dev linux-headers pkgconf'
 COPY Gemfile Gemfile.lock ./
 RUN apk update \
     && apk add --update --no-cache ${PACKAGES} \
