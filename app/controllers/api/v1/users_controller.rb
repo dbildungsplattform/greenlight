@@ -75,18 +75,21 @@ module Api
         user.pending! if !admin_create && registration_method == SiteSetting::REGISTRATION_METHODS[:approval]
 
         if user.save
-          if smtp_enabled && !invited
-            token = user.generate_activation_token!
-            UserMailer.with(user:,
-                            activation_url: activate_account_url(token), base_url: request.base_url,
-                            provider: current_provider).activate_account_email.deliver_later
+          if smtp_enabled
+            unless invited
+              token = user.generate_activation_token!
+              UserMailer.with(user:,
+                              activation_url: activate_account_url(token), base_url: request.base_url,
+                              provider: current_provider).activate_account_email.deliver_later
 
+            end
             UserMailer.with(user:, admin_panel_url:, base_url: request.base_url, provider: current_provider).new_user_signup_email.deliver_later
           end
 
           create_default_room(user)
 
-          return render_data data: user, serializer: CurrentUserSerializer, status: :created unless user.verified?
+          # Unverified users and users pending approval must not be signed in
+          return render_data data: user, serializer: CurrentUserSerializer, status: :created unless user.verified? && user.active?
 
           user.generate_session_token!
           session[:session_token] = user.session_token unless admin_create # if this is NOT an admin creating a user
@@ -159,29 +162,33 @@ module Api
         end
 
         current_user.update! password: new_password
+        current_user.generate_session_token!
+        session[:session_token] = current_user.session_token
+        cookies.delete :_extended_session
+
         render_data status: :ok
       end
 
       private
 
       def create_user_params
-        @create_user_params ||= params.require(:user).permit(:name, :email, :password, :avatar, :language, :invite_token)
+        @create_user_params ||= params.expect(user: %i[name email password avatar language invite_token])
       end
 
       def update_user_params
-        @update_user_params ||= params.require(:user).permit(permitted_params)
+        @update_user_params ||= params.expect(user: permitted_params)
       end
 
       def change_password_params
-        params.require(:user).permit(:old_password, :new_password)
+        params.expect(user: %i[old_password new_password])
       end
 
       def valid_invite_token
         return false if create_user_params[:invite_token].blank?
 
         # Try to delete the invitation and return true if it succeeds
-        Invitation.destroy_by(email: create_user_params[:email].downcase, provider: current_provider,
-                              token: create_user_params[:invite_token]).present?
+        Invitation.unexpired.destroy_by(email: create_user_params[:email].downcase, provider: current_provider,
+                                        token: create_user_params[:invite_token]).present?
       end
 
       def valid_domain?
@@ -198,13 +205,13 @@ module Api
       def permitted_params
         is_admin = PermissionsChecker.new(current_user:, permission_names: 'ManageUsers', current_provider:).call
 
-        return %i[password avatar language role_id invite_token] if external_auth? && !is_admin
+        return %i[avatar language role_id invite_token] if external_auth? && !is_admin
 
         allow_name_update = SettingGetter.new(setting_name: 'AllowNameUpdate', provider: current_provider).call
 
-        return %i[password avatar language role_id invite_token] if !allow_name_update && !is_admin
+        return %i[avatar language role_id invite_token] if !allow_name_update && !is_admin
 
-        %i[name password avatar language role_id invite_token]
+        %i[name avatar language role_id invite_token]
       end
     end
   end
