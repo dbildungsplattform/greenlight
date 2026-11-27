@@ -21,7 +21,7 @@ RUN bundle config --local deployment 'true' \
 
 FROM base AS build
 
-ARG PACKAGES='alpine-sdk libpq-dev yaml-dev libffi-dev linux-headers pkgconf'
+ARG PACKAGES='alpine-sdk libpq-dev linux-headers'
 COPY Gemfile Gemfile.lock ./
 RUN apk update \
     && apk add --update --no-cache ${PACKAGES} \
@@ -32,7 +32,7 @@ FROM base AS prod
 
 RUN addgroup -S -g 1000 greenlight && adduser -S -G greenlight -u 999 greenlight
 
-ARG PACKAGES='postgresql16-client libpq-dev tzdata imagemagick yarn bash jpeg-dev clamav-clamdscan'
+ARG PACKAGES='postgresql16-client libpq-dev tzdata imagemagick yarn bash jpeg-dev clamav-clamdscan glib'
 COPY --from=build $RAILS_ROOT/vendor/bundle ./vendor/bundle
 COPY package.json yarn.lock ./
 RUN apk update \
